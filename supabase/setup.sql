@@ -248,5 +248,12 @@ grant execute on function public.save_profile(uuid, text, text, text) to anon, a
 -- 예전 구조에서 쓰던 공용 검증 함수는 정리해요.
 drop function if exists public._hedgedoku_check_player(uuid, text, text, boolean);
 
+-- 프로젝트를 만들 때 "Enable automatic RLS"를 켜면 Supabase가 만드는 함수예요. 외부에서 부를 이유가 없으니 막아요.
+do $$ begin
+  if to_regprocedure('public.rls_auto_enable()') is not null then
+    revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+  end if;
+end $$;
+
 -- PostgREST가 새 함수·뷰를 바로 알아보도록 스키마 캐시를 새로 고쳐요.
 notify pgrst, 'reload schema';
