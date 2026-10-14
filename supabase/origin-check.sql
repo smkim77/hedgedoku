@@ -21,7 +21,7 @@ drop policy if exists "no api access" on private.allowed_origins;
 create policy "no api access" on private.allowed_origins for all to anon, authenticated using (false) with check (false);
 
 insert into private.allowed_origins (origin) values
-  ('https://tempted.github.io')   -- ← 여기를 바꾸세요
+  ('https://smkim77.github.io')   -- ← 여기를 바꾸세요
 on conflict do nothing;
 
 -- 요청의 Origin 헤더가 허용 목록에 없으면 거부해요.
