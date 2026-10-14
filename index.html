@@ -324,6 +324,7 @@ table.lbt { width: 100%; border-collapse: collapse; font-variant-numeric: tabula
 .rankMove .tag { display: block; font-family: var(--font-body); font-size: .8rem; color: var(--muted); }
 .lbResult .save { margin: 0; color: var(--muted); font-size: .88rem; }
 .lbResult .save.ok { color: var(--accent); }
+.lbResult .resActions { margin-top: 6px; }
 .lbt tr.me { position: relative; z-index: 1; }
 .lbt tr.me.flash td { animation: meFlash 1.8s ease-out; }
 @keyframes meFlash { 0%, 30% { background: color-mix(in srgb, var(--ring) 55%, transparent); } 100% { background: var(--accent-soft); } }
@@ -994,7 +995,7 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
       <p>${d.label} ${d.n}×${d.n} 도전 결과</p>
       <p class="big">${r.cleared}레벨 클리어 · ${fmt(r.totalMs)}</p>
       <div class="row"><button class="btn primary" id="ovNew">새 도전</button><button class="btn" id="ovLb">리더보드</button>${failed ? '<button class="btn" id="ovPeek">정답 보기</button>' : ''}</div>`);
-    $('ovNew').onclick = () => { S.lastResult = null; pendingAnim = null; hold = null; newRun(S.diff); };
+    $('ovNew').onclick = startNewRun;
     $('ovLb').onclick = () => openLB();
     wirePeek();
     if (r.cleared > 0 && !r.submitted && !S.lastResult) trySubmit();
@@ -1564,6 +1565,9 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     maybePlayRankAnim();
   }
 
+  // A fresh challenge at the same difficulty, from the end card or the leaderboard window.
+  function startNewRun() { S.lastResult = null; pendingAnim = null; hold = null; newRun(S.diff); }
+
   // ----- window open / close -----
   const lbModal = $('lbModal');
   let lbOpener = null;
@@ -1575,7 +1579,7 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     $('lbPanel').scrollTop = 0;
     render(); renderResult(); renderLB();
     if (lbEnabled && Date.now() - lbLoadedAt > 15000 && !hold) refreshLB();
-    $('lbClose').focus({ preventScroll: true });
+    ($('lbNew') && !$('lbResult').hidden ? $('lbNew') : $('lbClose')).focus({ preventScroll: true });
     maybePlayRankAnim();
   }
   function closeLB() {
@@ -1608,7 +1612,8 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     const key = `${r.seed}:${r.diff}:${r.cleared}:${r.totalMs}`;
     if (box.dataset.run !== key) {
       box.dataset.run = key;
-      box.innerHTML = `<div class="resHead"></div><div class="resStats"></div><div class="rankMove" id="rankMove" aria-live="polite"></div><div id="saveArea"></div>`;
+      box.innerHTML = `<div class="resHead"></div><div class="resStats"></div><div class="rankMove" id="rankMove" aria-live="polite"></div><div id="saveArea"></div><div class="resActions"><button class="btn primary" id="lbNew" type="button">새 도전</button></div>`;
+      $('lbNew').onclick = () => { closeLB(); startNewRun(); };
     }
     box.querySelector('.resHead').textContent = `이번 도전 · ${d.label} ${d.n}×${d.n}`;
     box.querySelector('.resStats').textContent = `${r.cleared}레벨 클리어 · ${fmt(r.totalMs)}`;
