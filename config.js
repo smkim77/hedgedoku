@@ -4,6 +4,6 @@
 // (service_role 키는 절대 넣지 마세요.)
 // 비워 두면 리더보드 없이 게임만 동작해요.
 window.HEDGEDOKU_CONFIG = {
-  supabaseUrl: 'https://mdhhfzmxiqmmorvamdqe.supabase.co',      // 예: 'https://abcdefghijklmnop.supabase.co'
-  supabaseAnonKey: 'sb_publishable_o74QIbaG5RtW-BKvnf1ugw_rSM2GSQE',  // 예: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9....'
+  supabaseUrl: 'https://fteijhmnqkogyqkdjymn.supabase.co',      // 예: 'https://abcdefghijklmnop.supabase.co'
+  supabaseAnonKey: 'sb_publishable_SlunJA77Adja0pgqi-2rUw_nal5aaub',  // 예: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9....'
 };
