@@ -1,0 +1,25 @@
+# Supabase 무료 프로젝트는 7일 넘게 요청이 없으면 일시정지돼요.
+# 사흘마다 리더보드를 한 번 읽어서 프로젝트가 깨어 있게 해요. (읽기만 하고 아무것도 저장하지 않아요)
+name: Supabase keepalive
+
+on:
+  schedule:
+    - cron: '17 3 */3 * *'   # 사흘마다 03:17 UTC (한국 시간 12:17)
+  workflow_dispatch:           # Actions 탭에서 직접 실행할 수도 있어요
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read one leaderboard row
+        run: |
+          URL=$(grep -oE "supabaseUrl: *'[^']+'" config.js | cut -d"'" -f2)
+          KEY=$(grep -oE "supabaseAnonKey: *'[^']+'" config.js | cut -d"'" -f2)
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "config.js에 Supabase 설정이 없어요"; exit 0; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/rest/v1/leaderboard?select=diff&limit=1" -H "apikey: $KEY")
+          echo "Supabase 응답: $code"
+          [ "$code" = "200" ]
