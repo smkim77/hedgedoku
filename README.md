@@ -5,6 +5,8 @@
 가시가 닿는 칸에 ✕를 쳐 가며 남은 자리를 좁혀 가는 브라우저 논리 퍼즐입니다.
 도전 모드에서는 주어진 사과로 몇 레벨까지 버틸 수 있는지 난이도별 리더보드에서 겨뤄 보세요.
 
+Godot 엔진으로 옮긴 버전도 있어요: https://smkim77.github.io/hedgedoku/play/ (원본은 `godot/`)
+
 ## 조작
 
 - 더블탭(더블클릭): 고슴도치 놓기
@@ -22,5 +24,6 @@
 - `manifest.webmanifest`, `icons/`: 홈 화면 아이콘과 앱 이름
 - `supabase/setup.sql`: 리더보드 DB를 만드는 SQL (새 Supabase 프로젝트의 SQL Editor에서 한 번 실행)
 - `tools/`: 아이콘 원본
+- `godot/`: Godot 4 버전 원본, `play/`: 그 웹 빌드 (`godot/README.md` 참고)
 
 파일을 고친 뒤에는 `sw.js` 맨 위의 `VERSION` 값을 올려서 함께 커밋하세요. 그래야 이미 플레이한 사람들도 새 버전을 받아요.

@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached on install. The page is network-first; other same-origin files
 // and Google Fonts are served stale-while-revalidate. Leaderboard (Supabase) requests always go to the network.
 // Bump VERSION whenever you deploy changed files so returning players get them.
-const VERSION = 'hedgedoku-v25';
+const VERSION = 'hedgedoku-v26';
 const SHELL = [
   './',
   './index.html',
@@ -29,6 +29,8 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  // The Godot version under play/ is a separate app with large files: leave it to the browser.
+  if (url.origin === self.location.origin && url.pathname.includes('/play/')) return;
   const cacheable = url.origin === self.location.origin
     || url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (!cacheable) return;
