@@ -162,6 +162,7 @@ var test_mode := false       # local test against a mock server (?sb=… on loca
 
 func _ready() -> void:
 	cfg.load(SAVE_PATH)
+	_adopt_html_profile()
 	font_body = load("res://fonts/GowunDodum-Regular.ttf")
 	font_display = load("res://fonts/Jua-Regular.ttf")
 	font_display.fallbacks = [font_body]   # Jua has no "·" and a few other symbols
@@ -231,6 +232,34 @@ func sget(k: String, d):
 func sset(k: String, v) -> void:
 	cfg.set_value("data", k, v)
 	cfg.save(SAVE_PATH)
+
+
+## The HTML version (same address) kept the player id, profile and practice progress in localStorage.
+## Take them over once, so this build keeps the same records on the leaderboard.
+func _adopt_html_profile() -> void:
+	if not OS.has_feature("web") or sget("adoptedHtml", false):
+		return
+	var raw = JavaScriptBridge.eval("""(() => { try {
+		const out = {};
+		for (const k of ['player', 'nick', 'avatar', 'cleared', 'autoX', 'seenRules', 'profileSynced', 'practice']) {
+			const v = localStorage.getItem('hedgedoku.' + k);
+			if (v !== null) out[k] = JSON.parse(v);
+		}
+		return JSON.stringify(out);
+	} catch (e) { return '{}'; } })()""", true)
+	var old = JSON.parse_string(str(raw)) if raw != null else null
+	sset("adoptedHtml", true)
+	if not (old is Dictionary):
+		return
+	var p = old.get("player")
+	if p is Dictionary and str(p.get("id", "")).length() == 36 and str(p.get("secret", "")).length() == 64:
+		sset("player", {"id": str(p.id), "secret": str(p.secret)})
+		for k in ["nick", "avatar", "profileSynced"]:
+			if old.has(k):
+				sset(k, old[k])
+	for k in ["cleared", "autoX", "seenRules", "practice"]:
+		if old.has(k):
+			sset(k, old[k])
 
 
 func _load_identity() -> void:
