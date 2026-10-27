@@ -242,6 +242,7 @@ section h2 { font-family: var(--font-display); font-weight: 400; font-size: 1.35
 .lbHead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .lbHead .seg button { font-size: .8rem; padding: 3px 10px; }
 .lbNote { font-size: .8rem; color: var(--muted); margin: 0; }
+.lbFilters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .lbTableWrap { overflow-x: auto; }
 table.lbt { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lbt th { text-align: left; font-weight: 400; font-size: .75rem; letter-spacing: .06em; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--grid); }
@@ -509,8 +510,11 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
       <button class="closeBtn" id="lbClose" type="button" aria-label="리더보드 닫기">×</button>
     </div>
     <div class="lbResult" id="lbResult" hidden></div>
-    <div class="seg" id="lbSeg" role="group" aria-label="리더보드 난이도"></div>
-    <p class="lbNote">주어진 사과(쉬움 3개 · 보통 4개 · 어려움 5개)로 몇 레벨까지 가는지 겨뤄요. 클리어한 레벨이 많을수록, 같으면 누적 시간이 짧을수록 위에 올라가요. 난이도마다 각자 최고 기록 하나만 남아요.</p>
+    <div class="lbFilters">
+      <div class="seg" id="lbSeg" role="group" aria-label="리더보드 난이도"></div>
+      <div class="seg" id="lbPeriod" role="group" aria-label="기간"><button data-p="all" aria-pressed="true">전체</button><button data-p="week" aria-pressed="false">이번 주</button></div>
+    </div>
+    <p class="lbNote">주어진 사과(쉬움 3개 · 보통 4개 · 어려움 5개)로 몇 레벨까지 가는지 겨뤄요. 클리어한 레벨이 많을수록, 같으면 누적 시간이 짧을수록 위에 올라가요. 난이도마다 각자 최고 기록 하나만 남아요. 이번 주 순위는 매주 월요일 0시(한국 시간)에 새로 시작해요.</p>
     <div class="lbTableWrap" id="lbBody"><p class="empty">리더보드를 불러오는 중…</p></div>
     <p class="lbStatus" id="lbStatus"></p>
   </div>
@@ -782,6 +786,7 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     run: null,
     clock: { acc: 0, since: 0, running: false },
     lbDiff: 'normal',
+    lbPeriod: 'all',   // leaderboard window: 'all' (all time) or 'week' (this week, from Monday 0:00 KST)
     lastResult: null,
   };
   const $ = id => document.getElementById(id);
@@ -1291,6 +1296,7 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     } else enterRunMode();
   });
   $('lbSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.lbDiff = b.dataset.d; render(); renderLB(); maybePlayRankAnim(); } });
+  $('lbPeriod').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.lbPeriod = b.dataset.p; renderLB(); maybePlayRankAnim(); } });
   $('undoBtn').onclick = () => { if (!S.history.length || !playing()) return; S.cells = S.history.pop(); render(); saveIfRun(); };
   $('hintBtn').onclick = hint;
   $('restartBtn').onclick = () => {
@@ -1354,6 +1360,7 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
   const SB_URL = String(CFG.supabaseUrl || '').replace(/\/+$/, '');
   const SB_KEY = String(CFG.supabaseAnonKey || '');
   const lbEnabled = /^https:\/\//.test(SB_URL) && SB_KEY.length > 20;
+  $('lbPeriod').hidden = !lbEnabled;   // this device's own board has no weekly view
   const NICK_MAX = 12, LB_TOP = 20;
 
   const randomHex = bytes => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
@@ -1399,48 +1406,50 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
   }
   const errorText = e => ERRORS[e?.code] || (e instanceof TypeError ? '인터넷 연결을 확인해 주세요.' : '리더보드 서버에 문제가 있어 기록을 저장하지 못했어요.');
 
-  // lbCache[diff] = { rows: [{player_id, nickname, levels, time_ms}], mine, myRank }
+  // lbCache[`${period}:${diff}`] = { rows: [{player_id, nickname, levels, time_ms}], mine, myRank }
   const lbCache = {};
+  const VIEWS = { all: 'leaderboard', week: 'leaderboard_week' };
+  const lbKey = (diff, period = S.lbPeriod) => `${period}:${diff}`;
   let lbState = lbEnabled ? 'loading' : 'off', lbToken = 0, lbLoadedAt = 0;
 
   // The avatar column arrives with supabase/profile-avatar.sql; until that runs, read without it.
   let hasAvatarCol = true;
   const cols = () => 'player_id,nickname,levels,time_ms' + (hasAvatarCol ? ',avatar' : '');
-  async function sbRows(query) {
-    try { return await (await sb(`leaderboard?select=${cols()}&${query}`)).json(); }
+  async function sbRows(view, query) {
+    try { return await (await sb(`${view}?select=${cols()}&${query}`)).json(); }
     catch (e) {
       if (!hasAvatarCol || !/avatar/.test(e?.message || '')) throw e;
       hasAvatarCol = false;
-      return await (await sb(`leaderboard?select=${cols()}&${query}`)).json();
+      return await (await sb(`${view}?select=${cols()}&${query}`)).json();
     }
   }
-  async function loadLB(diff) {
-    const q = `diff=eq.${diff}`;
-    const top = await sbRows(`${q}&order=levels.desc,time_ms.asc,updated_at.asc&limit=${LB_TOP}`);
+  async function loadLB(diff, period = S.lbPeriod) {
+    const view = VIEWS[period], q = `diff=eq.${diff}`;
+    const top = await sbRows(view, `${q}&order=levels.desc,time_ms.asc,updated_at.asc&limit=${LB_TOP}`);
     let mine = top.find(r => r.player_id === player.id) || null, myRank = mine ? top.indexOf(mine) + 1 : 0;
     if (!mine) {
-      const me = await sbRows(`${q}&player_id=eq.${player.id}`);
+      const me = await sbRows(view, `${q}&player_id=eq.${player.id}`);
       if (me[0]) {
         mine = me[0];
-        const ahead = await sb(`leaderboard?select=player_id&${q}&or=(levels.gt.${mine.levels},and(levels.eq.${mine.levels},time_ms.lt.${mine.time_ms}))`,
+        const ahead = await sb(`${view}?select=player_id&${q}&or=(levels.gt.${mine.levels},and(levels.eq.${mine.levels},time_ms.lt.${mine.time_ms}))`,
           { headers: { Prefer: 'count=exact', Range: '0-0' } });
         const total = Number((ahead.headers.get('content-range') || '').split('/')[1]);
         myRank = Number.isFinite(total) ? total + 1 : 0;
       }
     }
-    lbCache[diff] = { rows: top, mine, myRank };
+    lbCache[lbKey(diff, period)] = { rows: top, mine, myRank };
   }
 
-  async function refreshLB(diff = S.lbDiff) {
+  async function refreshLB(diff = S.lbDiff, period = S.lbPeriod) {
     if (!lbEnabled) { renderLB(); return; }
     const token = ++lbToken;
     try {
-      await loadLB(diff);
+      await loadLB(diff, period);
       if (token !== lbToken) return;
       lbState = 'ready'; lbLoadedAt = Date.now();
     } catch (e) {
       if (token !== lbToken) return;
-      lbState = lbCache[diff] ? 'ready' : 'error';
+      lbState = lbCache[lbKey(diff, period)] ? 'ready' : 'error';
       $('lbStatus').textContent = e instanceof TypeError ? '오프라인이에요. 연결되면 리더보드를 다시 불러올게요.' : '리더보드를 불러오지 못했어요.';
     }
     renderLB();
@@ -1454,22 +1463,29 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
         method: 'POST',
         body: { p_player: player.id, p_secret: player.secret, p_nickname: nickname, p_diff: diff, p_levels: levels, p_time_ms: Math.round(timeMs) },
       })).json();
-      await refreshLB(diff);
+      // Refresh both boards; the window then shows the one this run moved (all time first, else this week).
+      await Promise.all(['all', 'week'].map(p => loadLB(diff, p).catch(() => {})));
+      lbState = 'ready'; lbLoadedAt = Date.now();
+      const week = res?.week_status, rAll = lbCache[lbKey(diff, 'all')]?.myRank, rWeek = week ? lbCache[lbKey(diff, 'week')]?.myRank : 0;
+      if (res?.status === 'not_better' && week === 'new_best') {
+        return { ok: true, done: true, status: 'new_best', period: 'week',
+          msg: `이번 주 최고 기록이에요${rWeek ? ` · 이번 주 ${rWeek}위` : ''} (전체 최고 기록 ${res.levels}레벨 · ${fmt(res.time_ms)}은 그대로)` };
+      }
       if (res?.status === 'not_better') {
         // Rank this run on its own: records strictly better than it, plus one.
         let runRank = 0;
         try {
           const t = Math.round(timeMs);
-          const ahead = await sb(`leaderboard?select=player_id&diff=eq.${diff}&or=(levels.gt.${levels},and(levels.eq.${levels},time_ms.lt.${t}))`,
+          const ahead = await sb(`${VIEWS.all}?select=player_id&diff=eq.${diff}&or=(levels.gt.${levels},and(levels.eq.${levels},time_ms.lt.${t}))`,
             { headers: { Prefer: 'count=exact', Range: '0-0' } });
           const n = Number((ahead.headers.get('content-range') || '').split('/')[1]);
           if (Number.isFinite(n)) runRank = n + 1;
         } catch {}
-        return { ok: true, done: true, status: 'not_better', runRank,
+        return { ok: true, done: true, status: 'not_better', period: 'all', runRank,
           msg: `개인 최고 기록(${res.levels}레벨 · ${fmt(res.time_ms)})을 넘지 못해서 리더보드는 그대로예요.` };
       }
-      const rank = lbCache[diff]?.myRank;
-      return { ok: true, done: true, status: 'new_best', msg: rank ? `리더보드에 등록했어요 · ${rank}위` : '리더보드에 등록했어요' };
+      const ranks = [rAll && `전체 ${rAll}위`, rWeek && `이번 주 ${rWeek}위`].filter(Boolean).join(' · ');
+      return { ok: true, done: true, status: 'new_best', period: 'all', msg: `리더보드에 등록했어요${ranks ? ' · ' + ranks : ''}` };
     } catch (e) {
       const retry = !(e?.code in ERRORS) || e.code === 'bad_nickname';
       return { ok: false, retry, needNick: e?.code === 'bad_nickname', msg: errorText(e) };
@@ -1511,9 +1527,9 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
   const autoNick = av => `${ANIMAL_NAMES[av] || '고슴도치'}${Math.floor(1000 + Math.random() * 9000)}`;
 
   // Entries are the rows the table shows: {id, name, levels, timeMs, pos}, with null for the "⋯" gap.
-  function entriesFor(diff) {
+  function entriesFor(diff, period = S.lbPeriod) {
     if (!lbEnabled) return localEntries(diff);
-    const data = lbCache[diff];
+    const data = lbCache[lbKey(diff, period)];
     if (!data) return null;
     const list = data.rows.map((r, k) => ({ id: r.player_id, name: r.nickname, avatar: validAvatar(r.avatar), levels: Number(r.levels) | 0, timeMs: Number(r.time_ms) || 0, pos: k + 1 }));
     if (data.mine && data.myRank > LB_TOP) {
@@ -1524,8 +1540,8 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
   }
 
   // While a submission is in flight the table keeps showing the "before" state, so the rank change can be animated.
-  let hold = null;          // { diff, entries }
-  let pendingAnim = null;   // { diff, before, after, status }
+  let hold = null;          // { diff, entries: { all, week } }
+  let pendingAnim = null;   // { diff, period, before, after, status }
 
   async function trySubmit() {
     const r = S.run;
@@ -1536,7 +1552,7 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
       const after = localEntries(r.diff);
       r.submitted = true; saveRun();
       S.lastResult = { ok: true, done: true, msg: `이 기기 기록에 등록했어요 · ${after.myRank}위` };
-      pendingAnim = { diff: r.diff, before, after, status: 'local' };
+      pendingAnim = { diff: r.diff, period: S.lbPeriod, before, after, status: 'local' };
       renderResult(); maybePlayRankAnim();
       return;
     }
@@ -1545,20 +1561,20 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     let autoNamed = false;
     if (!nickname) { const av = avatar || randomAvatar(); setProfile(autoNick(av), av); autoNamed = true; }
     await syncProfile();
-    let before = null;
-    {
-      // Snapshot the board before submitting; if that lookup fails, skip the animation rather than guess.
-      try { await loadLB(r.diff); before = entriesFor(r.diff); } catch {}
-      if (before) hold = { diff: r.diff, entries: before };
-    }
+    // Snapshot both boards before submitting; a board whose lookup fails gets no animation rather than a guess.
+    const before = {};
+    await Promise.all(['all', 'week'].map(async p => { try { await loadLB(r.diff, p); before[p] = entriesFor(r.diff, p); } catch {} }));
+    hold = { diff: r.diff, entries: before };
     const res = await submitScore(r.diff, r.cleared, r.totalMs);
     if (S.run !== r) { hold = null; return; }
     if (res.done && autoNamed) { res.msg = res.msg.replace('리더보드에 등록했어요', `"${nickname}" 이름으로 등록했어요`); res.autoNamed = true; }
     S.lastResult = res;
     if (res.done) {
       r.submitted = true; saveRun();
-      const after = entriesFor(r.diff);
-      if (before && after) pendingAnim = { diff: r.diff, before, after, status: res.status, runRank: res.runRank };
+      const period = res.period || 'all';
+      S.lbPeriod = period; markPeriod();
+      const after = entriesFor(r.diff, period);
+      if (before[period] && after) pendingAnim = { diff: r.diff, period, before: before[period], after, status: res.status, runRank: res.runRank };
     } else hold = null;
     renderResult();
     if (!pendingAnim) renderLB();
@@ -1764,18 +1780,22 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
     return table;
   }
 
+  function markPeriod() {
+    $('lbPeriod').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === S.lbPeriod)));
+  }
   function renderLB() {
     const el = $('lbBody'), diff = S.lbDiff;
     $('lbSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.d === diff)));
+    markPeriod();
     $('lbStatus').textContent = lbEnabled ? '' : '온라인 리더보드가 설정되기 전이라 이 기기의 기록만 보여요.';
-    const held = hold && hold.diff === diff ? hold.entries : null;
+    const held = hold && hold.diff === diff ? hold.entries[S.lbPeriod] || null : null;
     const ent = held || entriesFor(diff);
     if (!ent) {
       el.innerHTML = `<p class="empty">${lbState === 'error' ? '리더보드를 불러오지 못했어요.' : '리더보드를 불러오는 중…'}</p>`;
       if (lbState !== 'error') refreshLB(diff);
       return;
     }
-    if (!ent.list.length) { el.innerHTML = '<p class="empty">아직 기록이 없어요. 첫 기록의 주인공이 되어 보세요.</p>'; return; }
+    if (!ent.list.length) { el.innerHTML = `<p class="empty">${lbEnabled && S.lbPeriod === 'week' ? '이번 주 기록이 아직 없어요. 이번 주 첫 주인공이 되어 보세요!' : '아직 기록이 없어요. 첫 기록의 주인공이 되어 보세요.'}</p>`; return; }
     el.replaceChildren(tableOf(ent.list));
   }
 
@@ -1792,12 +1812,13 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
 
   function maybePlayRankAnim() {
     const a = pendingAnim;
-    if (!a || lbModal.hidden || S.lbDiff !== a.diff) return;
+    if (!a || lbModal.hidden || S.lbDiff !== a.diff || (lbEnabled && S.lbPeriod !== a.period)) return;
     pendingAnim = null; hold = null;
     playRankAnim(a);
   }
 
-  function playRankAnim({ before, after, status, runRank }) {
+  function playRankAnim({ before, after, status, runRank, period }) {
+    const pre = lbEnabled && period === 'week' ? '이번 주 ' : '';
     const el = $('lbBody'), reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const oldRank = before.myRank, newRank = after.myRank;
     const mv = $('rankMove');
@@ -1812,14 +1833,14 @@ html, body, .overlay, .modal, .card, .panel { touch-action: manipulation; }
         mv.querySelector('.to').textContent = runRank ? `이번 기록 ${runRank}위` : '';
         mv.querySelector('.tag').textContent = newRank ? `내 최고 기록은 ${newRank}위 그대로예요` : '';
       } else if (!oldRank) {
-        mv.innerHTML = `<span class="to"></span><span class="tag">${status === 'local' ? '이 기기 기록 순위' : '첫 등록'}</span>`;
+        mv.innerHTML = `<span class="to"></span><span class="tag">${status === 'local' ? '이 기기 기록 순위' : pre + '첫 등록'}</span>`;
         const to = mv.querySelector('.to');
         if (reduce || !newRank) to.textContent = newRank ? `${newRank}위` : '';
         else countTo(to, Math.max(newRank + 9, (after.list.filter(Boolean).at(-1)?.pos || newRank) + 1), newRank, MOVE + DELAY, v => `${v}위`);
       } else {
         mv.innerHTML = `<span class="from"></span><span class="arrow">→</span><span class="to"></span><span class="tag"></span>`;
         mv.querySelector('.from').textContent = `${oldRank}위`;
-        mv.querySelector('.tag').textContent = newRank < oldRank ? `${oldRank - newRank}계단 올라갔어요` : newRank === oldRank ? '순위 유지 · 최고 기록 갱신' : '';
+        mv.querySelector('.tag').textContent = newRank < oldRank ? `${pre}${oldRank - newRank}계단 올라갔어요` : newRank === oldRank ? `${pre}순위 유지 · 최고 기록 갱신` : '';
         const to = mv.querySelector('.to');
         if (reduce) to.textContent = `${newRank}위`;
         else countTo(to, oldRank, newRank, MOVE + DELAY, v => `${v}위`);
