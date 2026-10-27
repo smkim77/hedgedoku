@@ -5,7 +5,7 @@
 가시가 닿는 칸에 ✕를 쳐 가며 남은 자리를 좁혀 가는 브라우저 논리 퍼즐입니다.
 도전 모드에서는 주어진 사과로 몇 레벨까지 버틸 수 있는지 난이도별 리더보드에서 겨뤄 보세요.
 
-Godot 엔진으로 옮긴 버전도 있어요: https://smkim77.github.io/hedgedoku/play/ (원본은 `godot/`)
+Godot 4로 만들어져 있어요. 플레이: https://smkim77.github.io/hedgedoku/
 
 ## 조작
 
@@ -14,16 +14,16 @@ Godot 엔진으로 옮긴 버전도 있어요: https://smkim77.github.io/hedgedo
 - 드래그: 첫 칸을 따라 여러 칸에 ✕ 표시하거나 지우기
 - 아래 버튼: 되돌리기, 힌트(사과 1개), 보드 비우기, 도전 끝내기
 - 난이도: 쉬움 7×7 (사과 3개) · 보통 9×9 (사과 4개) · 어려움 11×11 (사과 5개)
-- 휴대폰: 브라우저 메뉴의 **홈 화면에 추가**로 앱처럼 쓸 수 있어요
+- 키보드: 방향키로 칸 이동, Space로 ✕, Enter로 고슴도치 놓기
+- 휴대폰: 브라우저 메뉴의 **홈 화면에 추가**로 바로가기를 만들 수 있어요
 
 ## 파일
 
-- `index.html`: 게임 본체
-- `config.js`: 리더보드(Supabase) 주소와 공개 키 (비워 두면 리더보드 없이 게임만 동작)
-- `sw.js`: 오프라인 지원
-- `manifest.webmanifest`, `icons/`: 홈 화면 아이콘과 앱 이름
+- `godot/`: 게임 원본 (Godot 4 프로젝트, 자세한 내용은 `godot/README.md`)
+- `index.html`, `index.js`, `index.wasm`, `index.pck` 등: GitHub Pages에서 서비스되는 웹 빌드 (`godot/`에서 `Web` 프리셋으로 내보낸 결과)
 - `supabase/setup.sql`: 리더보드 DB를 만드는 SQL (새 Supabase 프로젝트의 SQL Editor에서 한 번 실행)
-- `tools/`: 아이콘 원본
-- `godot/`: Godot 4 버전 원본, `play/`: 그 웹 빌드 (`godot/README.md` 참고)
+- `sw.js`: 예전 HTML 버전이 남긴 오프라인 캐시를 지우는 파일 (지우지 마세요)
+- `play/`: 예전 주소(`/play/`)를 새 주소로 넘겨 주는 페이지
 
-파일을 고친 뒤에는 `sw.js` 맨 위의 `VERSION` 값을 올려서 함께 커밋하세요. 그래야 이미 플레이한 사람들도 새 버전을 받아요.
+게임을 고친 뒤에는 Godot 4.7.2(표준판)에서 `Web` 프리셋으로 내보내고, 바뀐 웹 빌드 파일도 함께 커밋하세요.
+예전 HTML 버전은 git 기록에 남아 있어요.

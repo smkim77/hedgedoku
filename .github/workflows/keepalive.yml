@@ -17,9 +17,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Read one leaderboard row
         run: |
-          URL=$(grep -oE "supabaseUrl: *'[^']+'" config.js | cut -d"'" -f2)
-          KEY=$(grep -oE "supabaseAnonKey: *'[^']+'" config.js | cut -d"'" -f2)
-          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "config.js에 Supabase 설정이 없어요"; exit 0; fi
+          URL=$(grep -oE '^var url := "[^"]+"' godot/lb.gd | cut -d'"' -f2)
+          KEY=$(grep -oE '^var key := "[^"]+"' godot/lb.gd | cut -d'"' -f2)
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "godot/lb.gd에 Supabase 설정이 없어요"; exit 0; fi
           code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/rest/v1/leaderboard?select=diff&limit=1" -H "apikey: $KEY")
           echo "Supabase 응답: $code"
           [ "$code" = "200" ]

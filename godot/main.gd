@@ -1941,7 +1941,7 @@ func try_submit() -> void:
 		save_run()
 		last_result = {"ok": true, "done": true, "msg": "이 기기 기록에 등록했어요 · %d위" % int(after.myRank)}
 		if not OS.has_feature("web") or str(JavaScriptBridge.eval("location.hostname", true)) != WRITE_HOST:
-			last_result.msg += "\n(온라인 리더보드에는 웹 버전에서 올릴 수 있어요)"
+			last_result.msg += "\n(온라인 리더보드에는 smkim77.github.io/hedgedoku 에서 올릴 수 있어요)"
 		pending_anim = {"diff": r.diff, "period": lb_period, "before": before, "after": after, "status": "local"}
 		render_result()
 		maybe_play_rank_anim()

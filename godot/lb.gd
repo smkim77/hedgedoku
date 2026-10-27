@@ -5,7 +5,7 @@ extends Node
 ## address, so main.gd enables them only when running there.
 
 var url := "https://fteijhmnqkogyqkdjymn.supabase.co"
-var key := "sb_publishable_SlunJA77Adja0pgqi-2rUw_nal5aaub"   # publishable (public) key, as in config.js
+var key := "sb_publishable_SlunJA77Adja0pgqi-2rUw_nal5aaub"   # publishable key: meant to be public; the server checks every write
 
 
 ## Returns {ok, code (HTTP status), data, error (server message or ""), headers (lower-case name -> value), net (true if no response)}.
