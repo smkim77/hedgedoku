@@ -72,6 +72,11 @@ var lb_cache := {}
 var lb_state := "loading"
 var lb_token := 0
 var lb_loaded_at := 0
+var lb_at := {}              # board key -> when it last loaded (ms)
+var lb_try := {}             # board key -> when a load last started (ms)
+var lb_loading := {}         # board keys being loaded now
+var lb_refresh_at := 0.0     # next periodic refresh while the window is open
+const LB_FRESH_MS := 15000
 var local_board := {}
 var hold = null
 var pending_anim = null
@@ -183,6 +188,9 @@ func _ready() -> void:
 	render_profile_btn()
 	_start()
 	_layout.call_deferred()
+	if lb_enabled:
+		_restore_lb_cache()
+		prefetch_lb.call_deferred()
 	if not sget("seenRules", false):
 		sset("seenRules", true)
 		open_rules.call_deferred()
@@ -775,6 +783,10 @@ func tick_timer() -> void:
 func _process(_dt: float) -> void:
 	if timer_lbl != null:
 		tick_timer()
+	if lb_enabled and lb_modal != null and lb_modal.visible and now_s() >= lb_refresh_at:
+		lb_refresh_at = now_s() + 60.0
+		if hold == null and pending_anim == null:
+			refresh_lb()
 	# idle volleys: every few seconds a random hedgehog puffs up and shoots again (visual only)
 	if now_s() >= volley_at:
 		volley_at = now_s() + 3.0 + randf() * 3.0
@@ -788,6 +800,8 @@ func _process(_dt: float) -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_IN and lb_enabled and lb_modal != null and lb_modal.visible:
+		render_lb()
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
 		if mode == "run" and run_active():
 			if run != null:
@@ -1794,6 +1808,48 @@ const COLS := "player_id,nickname,levels,time_ms,avatar"
 func load_lb(d: String, period := "") -> bool:
 	if period == "":
 		period = lb_period
+	var k := lb_key(d, period)
+	lb_try[k] = Time.get_ticks_msec()
+	lb_loading[k] = true
+	var ok := await _load_lb(d, period)
+	lb_loading.erase(k)
+	if ok:
+		lb_at[k] = Time.get_ticks_msec()
+		sset("lbCache", {"player": player.id, "boards": lb_cache})
+	return ok
+
+
+## Last boards seen on this device: shown at once on the next launch while fresh ones load.
+func _restore_lb_cache() -> void:
+	var c = sget("lbCache", null)
+	if c is Dictionary and c.get("player", "") == player.id and c.get("boards") is Dictionary:
+		lb_cache = c.boards
+		lb_state = "ready"
+
+
+## Loads every board (each difficulty, all time and this week) in the background, current one first.
+func prefetch_lb() -> void:
+	var order := [[lb_diff, lb_period]]
+	for p in ["all", "week"]:
+		for d in DIFFS:
+			if not ([d.id, p] in order):
+				order.append([d.id, p])
+	for b in order:
+		if lb_stale(b[0], b[1]):
+			await load_lb(b[0], b[1])
+			if lb_modal.visible and b[0] == lb_diff and b[1] == lb_period and hold == null and pending_anim == null:
+				render_lb()
+
+
+func lb_stale(d: String, period: String) -> bool:
+	var k := lb_key(d, period)
+	var t := Time.get_ticks_msec()
+	if lb_loading.has(k):
+		return false
+	return t - int(lb_at.get(k, -1000000)) > LB_FRESH_MS and t - int(lb_try.get(k, -1000000)) > 5000
+
+
+func _load_lb(d: String, period: String) -> bool:
 	var view: String = VIEWS[period]
 	var q := "diff=eq.%s" % d
 	var res := await sb.request("%s?select=%s&%s&order=levels.desc,time_ms.asc,updated_at.asc&limit=%d" % [view, COLS, q, LB_TOP])
@@ -2238,8 +2294,7 @@ func open_lb() -> void:
 	render()
 	render_result()
 	render_lb()
-	if lb_enabled and Time.get_ticks_msec() - lb_loaded_at > 15000 and hold == null:
-		refresh_lb()
+	lb_refresh_at = now_s() + 60.0
 	maybe_play_rank_anim()
 
 
@@ -2303,12 +2358,15 @@ func render_lb() -> void:
 	if hold != null and hold.diff == lb_diff:
 		held = hold.entries.get(lb_period)
 	var ent = held if held != null else entries_for(lb_diff)
+	# cached boards show at once; a stale one is refreshed in the background
+	if lb_enabled and held == null and hold == null and pending_anim == null and lb_stale(lb_diff, lb_period):
+		refresh_lb.call_deferred(lb_diff, lb_period)
 	if ent == null:
 		_fill_table([])
 		lb_empty.visible = true
-		lb_empty.text = "리더보드를 불러오지 못했어요." if lb_state == "error" else "리더보드를 불러오는 중…"
-		if lb_state != "error":
-			refresh_lb(lb_diff)
+		var k := lb_key(lb_diff)
+		var failed := lb_try.has(k) and not lb_loading.has(k) and not lb_at.has(k)
+		lb_empty.text = "리더보드를 불러오지 못했어요." if failed else "리더보드를 불러오는 중…"
 		return
 	if ent.list.is_empty():
 		_fill_table([])
