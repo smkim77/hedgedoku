@@ -3,6 +3,8 @@ extends RefCounted
 ## Puzzle generation, ported line by line from the web version (index.html) so the same key gives the same board:
 ## a random queen-style permutation with no diagonal neighbours, regions grown around it, then regions nudged
 ## until the solver finds exactly one solution. JS 32-bit integer maths is emulated with masks.
+## `prepare()` makes a puzzle a few milliseconds per frame (the web build has no threads), so the next level
+## can be ready before it is needed without the game stuttering.
 
 const M32 := 0xFFFFFFFF
 const HUES := 10
@@ -12,6 +14,25 @@ var N: int
 var reg: PackedInt32Array      # region of each cell
 var sol: PackedInt32Array      # sol[row] = column of that row's hedgehog
 var colors: PackedInt32Array   # palette index (0..10) of each region
+
+
+## Spreads work over frames: after `budget_us` of work, wait for the next frame.
+class Pacer:
+	var tree: SceneTree
+	var budget_us: int
+	var t0: int
+
+	func _init(t: SceneTree, us: int) -> void:
+		tree = t
+		budget_us = us
+		t0 = Time.get_ticks_usec()
+
+	func due() -> bool:
+		return Time.get_ticks_usec() - t0 > budget_us
+
+	func wait() -> void:
+		await tree.process_frame
+		t0 = Time.get_ticks_usec()
 
 
 # ---------- JS integer helpers ----------
@@ -102,7 +123,7 @@ static func random_perm(n: int, rng: Rng) -> Array:
 	return perm if _perm_rec(0, n, perm, used, rng) else []
 
 
-static func grow_regions(n: int, perm: Array, rng: Rng) -> Array:
+static func grow_regions(n: int, perm: Array, rng: Rng, pacer: Pacer = null) -> Array:
 	var r := []
 	r.resize(n * n)
 	r.fill(-1)
@@ -110,6 +131,8 @@ static func grow_regions(n: int, perm: Array, rng: Rng) -> Array:
 		r[row * n + perm[row]] = row
 	var left := n * n - n
 	while left > 0:
+		if pacer != null and pacer.due():
+			await pacer.wait()
 		var frontier := []
 		for i in n * n:
 			if r[i] < 0:
@@ -136,10 +159,13 @@ class Solver:
 	var cur: Array
 	var out: Array
 	var limit: int
+	var pacer: Pacer
+	var steps := 0
 
-	func _init(r: Array, size: int, lim: int) -> void:
+	func _init(r: Array, size: int, lim: int, p: Pacer) -> void:
 		n = size
 		limit = lim
+		pacer = p
 		cells_of = []
 		for g in n:
 			cells_of.append([])
@@ -169,6 +195,10 @@ class Solver:
 					blocked[rr * n + cc] += d
 
 	func rec(placed: int) -> void:
+		if pacer != null:
+			steps += 1
+			if steps & 63 == 0 and pacer.due():
+				await pacer.wait()
 		if placed == n:
 			out.append(cur.duplicate())
 			return
@@ -192,16 +222,16 @@ class Solver:
 				continue
 			cur[i / n] = i % n
 			mark(i, 1)
-			rec(placed + 1)
+			await rec(placed + 1)
 			mark(i, -1)
 			if out.size() >= limit:
 				break
 		used[best] = false
 
 
-static func solve(r: Array, n: int, limit: int) -> Array:
-	var s := Solver.new(r, n, limit)
-	s.rec(0)
+static func solve(r: Array, n: int, limit: int, pacer: Pacer = null) -> Array:
+	var s := Solver.new(r, n, limit, pacer)
+	await s.rec(0)
 	return s.out
 
 
@@ -251,7 +281,7 @@ static func hue_dist(a: int, b: int) -> float:
 
 
 ## Touching regions (including corner contact) get colours as far apart on the hue ring as possible.
-static func assign_colors(r: Array, n: int, rng: Rng) -> Array:
+static func assign_colors(r: Array, n: int, rng: Rng, pacer: Pacer = null) -> Array:
 	var adj := []
 	for g in n:
 		adj.append({})
@@ -309,6 +339,8 @@ static func assign_colors(r: Array, n: int, rng: Rng) -> Array:
 	while improved and pass_n < 20:
 		improved = false
 		for g in n:
+			if pacer != null and pacer.due():
+				await pacer.wait()
 			for h in range(g + 1, n):
 				var t = colors[g]
 				colors[g] = colors[h]
@@ -335,21 +367,26 @@ static func assign_colors(r: Array, n: int, rng: Rng) -> Array:
 	return colors
 
 
-static func generate(n: int, seed: int) -> Puzzle:
+## A coroutine; it only waits between frames when given a pacer (see for_key / prepare).
+static func generate(n: int, seed: int, pacer: Pacer = null) -> Puzzle:
 	var rng := Rng.new(seed)
 	for attempt in 300:
+		if pacer != null and pacer.due():
+			await pacer.wait()
 		var perm := random_perm(n, rng)
 		if perm.is_empty():
 			continue
-		var r := grow_regions(n, perm, rng)
+		var r: Array = await grow_regions(n, perm, rng, pacer)
 		for it in 400:
-			var sols := solve(r, n, 2)
+			if pacer != null and pacer.due():
+				await pacer.wait()
+			var sols: Array = await solve(r, n, 2, pacer)
 			if sols.size() == 1:
 				var p := Puzzle.new()
 				p.N = n
 				p.reg = PackedInt32Array(r)
 				p.sol = PackedInt32Array(perm)
-				p.colors = PackedInt32Array(assign_colors(r, n, rng))
+				p.colors = PackedInt32Array(await assign_colors(r, n, rng, pacer))
 				return p
 			var alt: Array = []
 			for s in sols:
@@ -366,8 +403,24 @@ static func generate(n: int, seed: int) -> Puzzle:
 
 
 static var _cache := {}
+static var _preparing := {}
 
+
+## The puzzle for `key`, made right away if it isn't ready yet.
 static func for_key(key: String, n: int) -> Puzzle:
 	if not _cache.has(key):
-		_cache[key] = generate(n, hash_str("hedgedoku:" + key))
+		# called dynamically: without a pacer the coroutine never waits, so it returns the puzzle directly
+		_cache[key] = Puzzle.generate.call(n, hash_str("hedgedoku:" + key), null)
 	return _cache[key]
+
+
+## Make the puzzle for `key` in the background (about 6 ms per frame), so for_key() finds it ready later.
+## Fire and forget: `Puzzle.prepare.call(key, n, get_tree())`.
+static func prepare(key: String, n: int, tree: SceneTree) -> void:
+	if _cache.has(key) or _preparing.has(key):
+		return
+	_preparing[key] = true
+	var p: Puzzle = await generate(n, hash_str("hedgedoku:" + key), Pacer.new(tree, 6000))
+	_preparing.erase(key)
+	if not _cache.has(key) and p != null:
+		_cache[key] = p

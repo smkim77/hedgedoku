@@ -414,6 +414,7 @@ func load_practice(d: String, level: int) -> void:
 	phase = "play"
 	last_tap = {"i": -1, "t": 0}
 	board.block_input(0.45)
+	prepare_next()
 	sset("practice", {"diff": d, "level": level})
 	hide_overlay()
 	render()
@@ -471,6 +472,7 @@ func begin_level() -> void:
 	last_tap = {"i": -1, "t": 0}
 	board.block_input(0.45)
 	phase = "play"
+	prepare_next()
 	clock_start()
 	hide_overlay()
 	render()
@@ -610,8 +612,6 @@ func check_win() -> void:
 			sset("cleared", cleared)
 		render()
 		show_practice_end(true)
-		if int(practice.level) < MAX_LEVEL:
-			_pregenerate("%s:%d" % [diff, int(practice.level) + 1], size_of(diff))
 
 
 func end_run(reason: String, fatal := -1) -> void:
@@ -909,7 +909,6 @@ func show_between(level_ms: int, cleared_level: int) -> void:
 			begin_level())
 		_card_row(box).add_child(go)
 		go.grab_focus.call_deferred())
-	_pregenerate("run:%d:%d" % [int(run.seed), int(run.level)], size_of(run.diff))
 
 
 func show_over() -> void:
@@ -937,11 +936,13 @@ func show_over() -> void:
 		try_submit()
 
 
-## Make the next puzzle while the card is on screen, so pressing its button switches boards at once.
-func _pregenerate(key: String, n: int) -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
-	Puzzle.for_key(key, n)
+## Start making the next level's puzzle in the background while this one is played,
+## so "다음 레벨" switches boards at once.
+func prepare_next() -> void:
+	if mode == "run" and run != null:
+		Puzzle.prepare.call("run:%d:%d" % [int(run.seed), int(run.level) + 1], size_of(run.diff), get_tree())
+	elif mode == "practice" and int(practice.level) < MAX_LEVEL:
+		Puzzle.prepare.call("%s:%d" % [diff, int(practice.level) + 1], size_of(diff), get_tree())
 
 
 func show_practice_end(won: bool) -> void:
