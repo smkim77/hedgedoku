@@ -412,6 +412,8 @@ func load_practice(d: String, level: int) -> void:
 	clock_reset()
 	clock_start()
 	phase = "play"
+	last_tap = {"i": -1, "t": 0}
+	board.block_input(0.45)
 	sset("practice", {"diff": d, "level": level})
 	hide_overlay()
 	render()
@@ -466,6 +468,8 @@ func leave_run_mode() -> void:
 
 
 func begin_level() -> void:
+	last_tap = {"i": -1, "t": 0}
+	board.block_input(0.45)
 	phase = "play"
 	clock_start()
 	hide_overlay()
@@ -606,6 +610,8 @@ func check_win() -> void:
 			sset("cleared", cleared)
 		render()
 		show_practice_end(true)
+		if int(practice.level) < MAX_LEVEL:
+			_pregenerate("%s:%d" % [diff, int(practice.level) + 1], size_of(diff))
 
 
 func end_run(reason: String, fatal := -1) -> void:
@@ -896,11 +902,14 @@ func show_between(level_ms: int, cleared_level: int) -> void:
 		box.add_child(_hog_box())
 		box.add_child(_title("레벨 %d 클리어!" % cleared_level))
 		box.add_child(_para("%s · 누적 %s · 사과 %d개" % [fmt(level_ms), fmt(run.totalMs), int(run.apples)]))
-		var go := _button("다음 레벨", "primary", func():
+		var go: Button
+		go = _button("다음 레벨", "primary", func():
+			go.disabled = true   # one press only
 			load_run_level()
 			begin_level())
 		_card_row(box).add_child(go)
 		go.grab_focus.call_deferred())
+	_pregenerate("run:%d:%d" % [int(run.seed), int(run.level)], size_of(run.diff))
 
 
 func show_over() -> void:
@@ -926,6 +935,13 @@ func show_over() -> void:
 		nw.grab_focus.call_deferred())
 	if int(run.cleared) > 0 and not run.get("submitted", false) and last_result == null:
 		try_submit()
+
+
+## Make the next puzzle while the card is on screen, so pressing its button switches boards at once.
+func _pregenerate(key: String, n: int) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Puzzle.for_key(key, n)
 
 
 func show_practice_end(won: bool) -> void:

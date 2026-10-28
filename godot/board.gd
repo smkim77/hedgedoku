@@ -33,6 +33,7 @@ var veiled := false
 var cursor := 0                # keyboard cursor
 var show_cursor := false
 
+var blocked_until := 0.0     # input is ignored until then (right after a new board appears)
 var press = null               # {i, last, moved, drag, pos, armed}
 var _prev := []                # cell values at the last sync, to start animations on change
 
@@ -73,6 +74,13 @@ func sync() -> void:
 
 func n() -> int:
 	return game.P.N
+
+
+## Ignore board input for a moment, so taps meant for a just-closed card (or queued while the next
+## puzzle was being made) don't land on the new board as × marks or hedgehogs.
+func block_input(sec: float) -> void:
+	blocked_until = now() + sec
+	press = null
 
 
 func cell_size() -> float:
@@ -327,6 +335,9 @@ func _gui_input(ev: InputEvent) -> void:
 		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		if ev.pressed:
+			if now() < blocked_until:
+				accept_event()
+				return
 			show_cursor = false
 			var i := cell_at(ev.position)
 			if i < 0 or not game.playing():
@@ -347,7 +358,7 @@ func _gui_input(ev: InputEvent) -> void:
 	elif ev is InputEventMouseMotion and press != null:
 		_drag_to(ev.position)
 		accept_event()
-	elif ev is InputEventKey and ev.pressed:
+	elif ev is InputEventKey and ev.pressed and now() >= blocked_until:
 		_key(ev)
 
 
